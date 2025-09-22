@@ -42,51 +42,33 @@ ia = imdb.IMDb()
 # Streamlit UI
 # =========================
 st.set_page_config(page_title="Meine Watchlist", page_icon="🎬")
-st.title("🎬 Meine Watchlist mit Details")
+st.title("🎬 Meine Watchlist App")
 
-# Load watchlist
+# -------------------------
+# Watchlist laden
+# -------------------------
 movies = load_watchlist()
 
 # -------------------------
-# Film hinzufügen
-# -------------------------
-st.subheader("➕ Film hinzufügen")
-new_movie = st.text_input("Filmtitel eingeben")
-new_director = st.text_input("Regisseur")
-new_year = st.text_input("Erscheinungsjahr")
-new_streaming = st.text_input("Streaming-Anbieter (optional, Komma getrennt)")
-
-if st.button("Hinzufügen"):
-    if new_movie.strip():
-        movies.append({
-            "title": new_movie.strip(),
-            "director": new_director.strip() if new_director else "unbekannt",
-            "year": new_year.strip() if new_year else "unbekannt",
-            "streaming": new_streaming.strip()
-        })
-        save_watchlist(movies)
-        st.success(f"✅ '{new_movie.strip()}' hinzugefügt.")
-    else:
-        st.warning("Bitte mindestens einen Filmtitel eingeben.")
-
-# -------------------------
-# Filme anzeigen + löschen
+# Watchlist anzeigen
 # -------------------------
 st.subheader("📋 Aktuelle Watchlist")
 if movies:
-    titles = [f"{m['title']} ({m['year']}) — {m['director']}" for m in movies]
-    selected_index = st.selectbox("Film auswählen", range(len(titles)), format_func=lambda x: titles[x])
-    if st.button("❌ Aus Liste entfernen"):
+    st.table([{ "Titel": m["title"], "Regisseur": m["director"], "Jahr": m["year"], "Streaming": m["streaming"] } for m in movies])
+    # Film löschen
+    titles = [f"{m['title']} ({m['year']})" for m in movies]
+    selected_index = st.selectbox("Film zum Entfernen auswählen", range(len(titles)), format_func=lambda x: titles[x])
+    if st.button("❌ Film entfernen"):
         removed = movies.pop(selected_index)
         save_watchlist(movies)
-        st.success(f"🗑️ '{removed['title']}' entfernt.")
+        st.success(f"🗑️ '{removed['title']}' wurde entfernt.")
 else:
     st.info("Noch keine Filme in der Watchlist.")
 
 # -------------------------
 # Zufälliger Film
 # -------------------------
-st.subheader("🎲 Zufallsauswahl")
+st.subheader("🎲 Zufälliger Film")
 if movies and st.button("Film vorschlagen"):
     film = random.choice(movies)
     st.subheader(f"👉 Heute schauen: {film['title']} ({film['year']})")
@@ -95,36 +77,16 @@ if movies and st.button("Film vorschlagen"):
         st.write(f"📺 Streaming: {film['streaming']}")
 
 # -------------------------
-# Suche nach Schlagworten + Regisseur
+# IMDb-Suche + zur Watchlist hinzufügen
 # -------------------------
-st.subheader("🔍 Film suchen")
-search_input = st.text_input("Titel oder Schlagwort")
+st.subheader("🔍 IMDb-Suche und zur Watchlist hinzufügen")
+search_input = st.text_input("Titel-Schlagwort")
 director_input = st.text_input("Regisseur (optional)")
 
-if st.button("Suchen"):
-    results = []
-    for movie in movies:
-        if search_input.lower() in movie['title'].lower():
-            if director_input:
-                if director_input.lower() in movie['director'].lower():
-                    results.append(movie)
-            else:
-                results.append(movie)
-    if results:
-        st.write("Gefundene Filme:")
-        for f in results:
-            st.write(f"{f['title']} ({f['year']}) — Regisseur: {f['director']} — Streaming: {f['streaming']}")
-    else:
-        st.warning("Kein Film gefunden.")
-st.subheader("🔍 Erweiterte Suche (IMDb)")
-search_input_imdb = st.text_input("Titel-Schlagwort für IMDb")
-director_input_imdb = st.text_input("Regisseur für IMDb (optional)")
-
 if st.button("IMDb-Suche"):
-    if search_input_imdb.strip():
+    if search_input.strip():
         try:
-            # Filme suchen
-            query = search_input_imdb.strip()
+            query = search_input.strip()
             results = ia.search_movie(query)
             filtered = []
             for movie in results:
@@ -134,17 +96,29 @@ if st.button("IMDb-Suche"):
                 directors = [d['name'] for d in movie.get('directors', [])] or ['unbekannt']
 
                 # Filter nach Regisseur, falls angegeben
-                if director_input_imdb.strip():
-                    if any(director_input_imdb.lower() in d.lower() for d in directors):
+                if director_input.strip():
+                    if any(director_input.lower() in d.lower() for d in directors):
                         filtered.append((title, year, directors))
                 else:
                     filtered.append((title, year, directors))
 
-            # Ergebnisse anzeigen
+            # Ergebnisse als MultiSelect zum Hinzufügen
             if filtered:
-                st.write("Gefundene Filme in IMDb:")
-                for f in filtered:
-                    st.write(f"{f[0]} ({f[1]}) — Regisseur: {', '.join(f[2])}")
+                options = [f"{f[0]} ({f[1]}) — {', '.join(f[2])}" for f in filtered]
+                selected = st.multiselect("Filme zur Watchlist hinzufügen", options)
+                if st.button("Ausgewählte Filme hinzufügen"):
+                    for s in selected:
+                        # Infos extrahieren
+                        idx = options.index(s)
+                        f = filtered[idx]
+                        movies.append({
+                            "title": f[0],
+                            "director": ", ".join(f[2]),
+                            "year": str(f[1]),
+                            "streaming": ""
+                        })
+                    save_watchlist(movies)
+                    st.success(f"✅ {len(selected)} Film(e) hinzugefügt.")
             else:
                 st.warning("Kein passender Film in IMDb gefunden.")
 
