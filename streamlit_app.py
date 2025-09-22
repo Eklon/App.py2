@@ -1,15 +1,16 @@
 import streamlit as st
 import random
 import os
-import imdb
+import requests
 
 # =========================
 # Hilfsfunktionen
 # =========================
 WATCHLIST_FILE = "watchlist.txt"
+OMDB_API_KEY = "dc082af9"  # <-- Dein OMDb API-Key hier
+OMDB_URL = "http://www.omdbapi.com/"
 
 def load_watchlist():
-    """Lädt die Watchlist aus der Datei und gibt eine Liste von Dictionaries zurück"""
     movies = []
     if os.path.exists(WATCHLIST_FILE):
         with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
@@ -28,21 +29,37 @@ def load_watchlist():
     return movies
 
 def save_watchlist(movies):
-    """Speichert die Watchlist in der Datei"""
     with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
         for m in movies:
             f.write(f"{m['title']} | {m['director']} | {m['year']} | {m['streaming']}\n")
 
-# =========================
-# IMDb Instanz
-# =========================
-ia = imdb.IMDb()
+def search_omdb(title, director=None):
+    """Suche Filme über OMDb API"""
+    params = {"apikey": OMDB_API_KEY, "s": title, "type": "movie"}
+    response = requests.get(OMDB_URL, params=params)
+    data = response.json()
+    results = []
+    if data.get("Response") == "True":
+        for item in data.get("Search", []):
+            imdb_id = item.get("imdbID")
+            # Detailinfos abrufen
+            detail = requests.get(OMDB_URL, params={"apikey": OMDB_API_KEY, "i": imdb_id}).json()
+            t = detail.get("Title", "")
+            y = detail.get("Year", "unbekannt")
+            d = detail.get("Director", "unbekannt")
+            # Optional nach Regisseur filtern
+            if director:
+                if director.lower() in d.lower():
+                    results.append({"title": t, "year": y, "director": d})
+            else:
+                results.append({"title": t, "year": y, "director": d})
+    return results
 
 # =========================
 # Streamlit UI
 # =========================
 st.set_page_config(page_title="Meine Watchlist", page_icon="🎬")
-st.title("🎬 Meine Watchlist App")
+st.title("🎬 Meine Watchlist App (OMDb Version)")
 
 # -------------------------
 # Watchlist laden
@@ -77,52 +94,26 @@ if movies and st.button("Film vorschlagen"):
         st.write(f"📺 Streaming: {film['streaming']}")
 
 # -------------------------
-# IMDb-Suche + zur Watchlist hinzufügen
+# OMDb-Suche + zur Watchlist hinzufügen
 # -------------------------
-st.subheader("🔍 IMDb-Suche und zur Watchlist hinzufügen")
+st.subheader("🔍 OMDb-Suche und zur Watchlist hinzufügen")
 search_input = st.text_input("Titel-Schlagwort")
 director_input = st.text_input("Regisseur (optional)")
 
-if st.button("IMDb-Suche"):
+if st.button("Filme suchen"):
     if search_input.strip():
-        try:
-            query = search_input.strip()
-            results = ia.search_movie(query)
-            filtered = []
-            for movie in results:
-                ia.update(movie)
-                title = movie.get('title', '')
-                year = movie.get('year', 'unbekannt')
-                directors = [d['name'] for d in movie.get('directors', [])] or ['unbekannt']
-
-                # Filter nach Regisseur, falls angegeben
-                if director_input.strip():
-                    if any(director_input.lower() in d.lower() for d in directors):
-                        filtered.append((title, year, directors))
-                else:
-                    filtered.append((title, year, directors))
-
-            # Ergebnisse als MultiSelect zum Hinzufügen
-            if filtered:
-                options = [f"{f[0]} ({f[1]}) — {', '.join(f[2])}" for f in filtered]
-                selected = st.multiselect("Filme zur Watchlist hinzufügen", options)
-                if st.button("Ausgewählte Filme hinzufügen"):
-                    for s in selected:
-                        # Infos extrahieren
-                        idx = options.index(s)
-                        f = filtered[idx]
-                        movies.append({
-                            "title": f[0],
-                            "director": ", ".join(f[2]),
-                            "year": str(f[1]),
-                            "streaming": ""
-                        })
-                    save_watchlist(movies)
-                    st.success(f"✅ {len(selected)} Film(e) hinzugefügt.")
-            else:
-                st.warning("Kein passender Film in IMDb gefunden.")
-
-        except Exception as e:
-            st.error(f"Fehler bei der IMDb-Suche: {e}")
+        results = search_omdb(search_input.strip(), director_input.strip())
+        if results:
+            options = [f"{f['title']} ({f['year']}) — {f['director']}" for f in results]
+            selected = st.multiselect("Filme zur Watchlist hinzufügen", options)
+            if st.button("Ausgewählte Filme hinzufügen"):
+                for s in selected:
+                    idx = options.index(s)
+                    f = results[idx]
+                    movies.append({"title": f["title"], "director": f["director"], "year": f["year"], "streaming": ""})
+                save_watchlist(movies)
+                st.success(f"✅ {len(selected)} Film(e) hinzugefügt.")
+        else:
+            st.warning("Keine Filme gefunden.")
     else:
         st.info("Bitte ein Schlagwort eingeben.")
