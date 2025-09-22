@@ -1,7 +1,7 @@
 import streamlit as st
 import random
-from justwatch import JustWatch
 import os
+import imdb
 
 # =========================
 # Hilfsfunktionen
@@ -9,114 +9,110 @@ import os
 WATCHLIST_FILE = "watchlist.txt"
 
 def load_watchlist():
+    """Lädt die Watchlist aus der Datei und gibt eine Liste von Dictionaries zurück"""
+    movies = []
     if os.path.exists(WATCHLIST_FILE):
         with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
-    return []
+            for line in f:
+                parts = line.strip().split("|")
+                title = parts[0].strip()
+                director = parts[1].strip() if len(parts) > 1 else "unbekannt"
+                year = parts[2].strip() if len(parts) > 2 else "unbekannt"
+                streaming = parts[3].strip() if len(parts) > 3 else ""
+                movies.append({
+                    "title": title,
+                    "director": director,
+                    "year": year,
+                    "streaming": streaming
+                })
+    return movies
 
 def save_watchlist(movies):
+    """Speichert die Watchlist in der Datei"""
     with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
-        for movie in movies:
-            f.write(movie + "\n")
+        for m in movies:
+            f.write(f"{m['title']} | {m['director']} | {m['year']} | {m['streaming']}\n")
 
 # =========================
-# JustWatch initialisieren
+# IMDb Instanz
 # =========================
-justwatch = JustWatch(country="DE")
-
-# Provider-ID → Name Mapping
-provider_map = {
-    7: "Apple iTunes",
-    8: "Netflix",
-    9: "Amazon Prime Video",
-    10: "Amazon Video",
-    11: "Google Play Movies",
-    12: "YouTube",
-    15: "Hulu",
-    24: "Sky Store",
-    31: "Maxdome",
-    37: "Disney+",
-    119: "MagentaTV",
-    149: "Apple TV+",
-    350: "WOW",
-    384: "Netflix Kids",
-}
+ia = imdb.IMDb()
 
 # =========================
 # Streamlit UI
 # =========================
 st.set_page_config(page_title="Meine Watchlist", page_icon="🎬")
-st.title("🎬 Meine Watchlist mit Streaming-Infos")
+st.title("🎬 Meine Watchlist mit Details")
 
-# Watchlist laden
+# Load watchlist
 movies = load_watchlist()
 
 # -------------------------
 # Film hinzufügen
 # -------------------------
 st.subheader("➕ Film hinzufügen")
-new_movie = st.text_input("Filmtitel eingeben:")
+new_movie = st.text_input("Filmtitel eingeben")
+new_director = st.text_input("Regisseur")
+new_year = st.text_input("Erscheinungsjahr")
+new_streaming = st.text_input("Streaming-Anbieter (optional, Komma getrennt)")
+
 if st.button("Hinzufügen"):
-    if new_movie and new_movie.strip():
-        new_movie = new_movie.strip()
-        if new_movie not in movies:
-            movies.append(new_movie)
-            save_watchlist(movies)
-            st.success(f"✅ '{new_movie}' wurde zur Watchlist hinzugefügt.")
-        else:
-            st.warning("⚠️ Dieser Film ist schon in der Watchlist.")
+    if new_movie.strip():
+        movies.append({
+            "title": new_movie.strip(),
+            "director": new_director.strip() if new_director else "unbekannt",
+            "year": new_year.strip() if new_year else "unbekannt",
+            "streaming": new_streaming.strip()
+        })
+        save_watchlist(movies)
+        st.success(f"✅ '{new_movie.strip()}' hinzugefügt.")
     else:
-        st.info("Bitte einen Filmtitel eingeben.")
+        st.warning("Bitte mindestens einen Filmtitel eingeben.")
 
 # -------------------------
 # Filme anzeigen + löschen
 # -------------------------
 st.subheader("📋 Aktuelle Watchlist")
 if movies:
-    selected_movie = st.selectbox("Film auswählen:", movies)
+    titles = [f"{m['title']} ({m['year']}) — {m['director']}" for m in movies]
+    selected_index = st.selectbox("Film auswählen", range(len(titles)), format_func=lambda x: titles[x])
     if st.button("❌ Aus Liste entfernen"):
-        movies.remove(selected_movie)
+        removed = movies.pop(selected_index)
         save_watchlist(movies)
-        st.success(f"🗑️ '{selected_movie}' wurde entfernt.")
+        st.success(f"🗑️ '{removed['title']}' entfernt.")
 else:
-    st.info("Noch keine Filme in der Watchlist. Füge links einen Film hinzu.")
+    st.info("Noch keine Filme in der Watchlist.")
 
 # -------------------------
-# Zufälligen Film auswählen
+# Zufälliger Film
 # -------------------------
 st.subheader("🎲 Zufallsauswahl")
 if movies and st.button("Film vorschlagen"):
     film = random.choice(movies)
-    st.subheader(f"👉 Heute schauen: {film}")
+    st.subheader(f"👉 Heute schauen: {film['title']} ({film['year']})")
+    st.write(f"🎬 Regisseur: {film['director']}")
+    if film['streaming']:
+        st.write(f"📺 Streaming: {film['streaming']}")
 
-    try:
-        # JustWatch-Suche
-        results = justwatch.search_for_item(query=film)
+# -------------------------
+# Suche nach Schlagworten + Regisseur
+# -------------------------
+st.subheader("🔍 Film suchen")
+search_input = st.text_input("Titel oder Schlagwort")
+director_input = st.text_input("Regisseur (optional)")
 
-        if results["items"]:
-            item = results["items"][0]
-            st.write(f"**Gefunden:** {item.get('title','-')} ({item.get('original_release_year', 'unbekannt')})")
-
-            # Anbieter anzeigen
-            offers = item.get("offers", [])
-            if offers:
-                st.write("📺 Verfügbar bei:")
-                shown = set()
-                for offer in offers:
-                    provider_id = offer.get("provider_id")
-                    provider_name = provider_map.get(provider_id, f"Anbieter #{provider_id}")
-                    if provider_name not in shown:
-                        link = offer.get("urls", {}).get("standard_web", "")
-                        price = offer.get("retail_price", "")
-                        monetization = offer.get("monetization_type", "")
-                        if link:
-                            st.markdown(f"- [{provider_name}]({link}) — {monetization} {price}")
-                        else:
-                            st.write(f"- {provider_name} — {monetization} {price}")
-                        shown.add(provider_name)
+if st.button("Suchen"):
+    results = []
+    for movie in movies:
+        if search_input.lower() in movie['title'].lower():
+            if director_input:
+                if director_input.lower() in movie['director'].lower():
+                    results.append(movie)
             else:
-                st.warning("⚠️ Keine Streaming-/Kauf-Angebote gefunden.")
-        else:
-            st.error("❌ Film nicht bei JustWatch gefunden.")
-    except Exception as e:
-        st.error(f"Fehler bei der Abfrage: {e}")
+                results.append(movie)
+    if results:
+        st.write("Gefundene Filme:")
+        for f in results:
+            st.write(f"{f['title']} ({f['year']}) — Regisseur: {f['director']} — Streaming: {f['streaming']}")
+    else:
+        st.warning("Kein Film gefunden.")
