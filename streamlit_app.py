@@ -116,3 +116,39 @@ if st.button("Suchen"):
             st.write(f"{f['title']} ({f['year']}) — Regisseur: {f['director']} — Streaming: {f['streaming']}")
     else:
         st.warning("Kein Film gefunden.")
+st.subheader("🔍 Erweiterte Suche (IMDb)")
+search_input_imdb = st.text_input("Titel-Schlagwort für IMDb")
+director_input_imdb = st.text_input("Regisseur für IMDb (optional)")
+
+if st.button("IMDb-Suche"):
+    if search_input_imdb.strip():
+        try:
+            # Filme suchen
+            query = search_input_imdb.strip()
+            results = ia.search_movie(query)
+            filtered = []
+            for movie in results:
+                ia.update(movie)
+                title = movie.get('title', '')
+                year = movie.get('year', 'unbekannt')
+                directors = [d['name'] for d in movie.get('directors', [])] or ['unbekannt']
+
+                # Filter nach Regisseur, falls angegeben
+                if director_input_imdb.strip():
+                    if any(director_input_imdb.lower() in d.lower() for d in directors):
+                        filtered.append((title, year, directors))
+                else:
+                    filtered.append((title, year, directors))
+
+            # Ergebnisse anzeigen
+            if filtered:
+                st.write("Gefundene Filme in IMDb:")
+                for f in filtered:
+                    st.write(f"{f[0]} ({f[1]}) — Regisseur: {', '.join(f[2])}")
+            else:
+                st.warning("Kein passender Film in IMDb gefunden.")
+
+        except Exception as e:
+            st.error(f"Fehler bei der IMDb-Suche: {e}")
+    else:
+        st.info("Bitte ein Schlagwort eingeben.")
